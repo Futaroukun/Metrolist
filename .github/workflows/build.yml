@@ -59,6 +59,23 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Restore or Generate Keystore
+        run: |
+          if [ -n "${{ secrets.DEBUG_KEYSTORE }}" ]; then
+            echo "${{ secrets.DEBUG_KEYSTORE }}" | base64 -d > ./app/persistent-debug.keystore
+          else
+            echo "Generating persistent debug keystore for CI..."
+            keytool -genkeypair -v \
+              -keystore ./app/persistent-debug.keystore \
+              -alias androiddebugkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
       - name: Build Release APK
         run: ./gradlew --console=plain assemble${{ matrix.variantName }}Release --warning-mode summary
         env:
@@ -70,27 +87,11 @@ jobs:
           LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
           LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
 
-      - name: Sign APK
-        run: |
-          OUTPUT_DIR="app/build/outputs/apk/${{ matrix.variant }}/release"
-          mkdir -p "$OUTPUT_DIR/out"
-          if [ "${{ matrix.variant }}" = "gms" ]; then
-            TARGET_NAME="app-universal-with-Google-Cast.apk"
-          else
-            TARGET_NAME="app-universal-release.apk"
-          fi
-          
-          UNSIGNED_APK=$(find "$OUTPUT_DIR" -name "*.apk" ! -name "*-signed.apk" | head -n 1)
-          if [ -n "$UNSIGNED_APK" ]; then
-            keytool -genkeypair -v -keystore release.keystore -alias metrolist -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Metrolist, OU=Fork, O=Futaroukun, C=ID"
-            apksigner sign --ks release.keystore --ks-pass pass:android --key-pass pass:android --out "$OUTPUT_DIR/out/$TARGET_NAME" "$UNSIGNED_APK"
-          fi
-
-      - name: Upload Signed APK
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.variant == 'gms' && 'app-with-Google-Cast' || 'app-release' }}
-          path: app/build/outputs/apk/${{ matrix.variant }}/release/out/*
+          path: app/build/outputs/apk/${{ matrix.variant }}/release/*.apk
 
   build_debug:
     name: Build Debug (${{ matrix.variant }})
@@ -122,10 +123,21 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Restore Persistent Keystore
+      - name: Restore or Generate Keystore
         run: |
           if [ -n "${{ secrets.DEBUG_KEYSTORE }}" ]; then
             echo "${{ secrets.DEBUG_KEYSTORE }}" | base64 -d > ./app/persistent-debug.keystore
+          else
+            echo "Generating persistent debug keystore for CI..."
+            keytool -genkeypair -v \
+              -keystore ./app/persistent-debug.keystore \
+              -alias androiddebugkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
           fi
 
       # Lint is intentionally not run in CI: it never gated a merge and added
@@ -149,7 +161,7 @@ jobs:
 
   publish_nightly:
     name: Publish Nightly Release
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.repository == 'MetrolistGroup/Metrolist'
     needs: [build_release, build_debug]
     runs-on: ubuntu-latest
     timeout-minutes: 5
