@@ -27,7 +27,7 @@ jobs:
   build_release:
     name: Build Release (${{ matrix.variant }})
     if: github.actor != 'dependabot[bot]' && github.actor != 'renovate[bot]'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 15
 
     strategy:
@@ -42,16 +42,16 @@ jobs:
             variantName: Gms
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@v4
         with:
           java-version: "21"
           distribution: "temurin"
 
       - name: Set Up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v4
         with:
           cache-encryption-key: ${{ secrets.GRADLE_CACHE_KEY }}
           cache-cleanup: on-success
@@ -71,16 +71,6 @@ jobs:
           LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
 
       - name: Sign APK
-        uses: ilharp/sign-android-release@v2.0.0
-        with:
-          releaseDir: app/build/outputs/apk/${{ matrix.variant }}/release/
-          signingKey: ${{ secrets.KEYSTORE }}
-          keyAlias: ${{ secrets.KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-          buildToolsVersion: 36.0.0
-
-      - name: Move signed APK
         run: |
           OUTPUT_DIR="app/build/outputs/apk/${{ matrix.variant }}/release"
           mkdir -p "$OUTPUT_DIR/out"
@@ -89,10 +79,15 @@ jobs:
           else
             TARGET_NAME="app-universal-release.apk"
           fi
-          find "$OUTPUT_DIR" -name "*-signed.apk" -o -name "*-unsigned-signed.apk" | xargs -I{} mv {} "$OUTPUT_DIR/out/$TARGET_NAME"
+          
+          UNSIGNED_APK=$(find "$OUTPUT_DIR" -name "*.apk" ! -name "*-signed.apk" | head -n 1)
+          if [ -n "$UNSIGNED_APK" ]; then
+            keytool -genkeypair -v -keystore release.keystore -alias metrolist -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Metrolist, OU=Fork, O=Futaroukun, C=ID"
+            apksigner sign --ks release.keystore --ks-pass pass:android --key-pass pass:android --out "$OUTPUT_DIR/out/$TARGET_NAME" "$UNSIGNED_APK"
+          fi
 
       - name: Upload Signed APK
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.variant == 'gms' && 'app-with-Google-Cast' || 'app-release' }}
           path: app/build/outputs/apk/${{ matrix.variant }}/release/out/*
@@ -100,31 +95,26 @@ jobs:
   build_debug:
     name: Build Debug (${{ matrix.variant }})
     if: github.actor != 'dependabot[bot]' && github.actor != 'renovate[bot]'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 15
 
     strategy:
       matrix:
         include:
-          # FOSS and Izzy differ from GMS only by ~80 lines of Cast stubs,
-          # plus the updater flag for Izzy (GMS and FOSS enable the updater,
-          # Izzy disables it). Both are still built by the release workflow,
-          # so building them nightly too doubled this workflow for almost no
-          # extra coverage.
           - variant: gms
             variantName: Gms
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@v4
         with:
           java-version: "21"
           distribution: "temurin"
 
       - name: Set Up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v4
         with:
           cache-encryption-key: ${{ secrets.GRADLE_CACHE_KEY }}
           cache-cleanup: on-success
@@ -134,7 +124,9 @@ jobs:
 
       - name: Restore Persistent Keystore
         run: |
-          echo "${{ secrets.DEBUG_KEYSTORE }}" | base64 -d > ./app/persistent-debug.keystore
+          if [ -n "${{ secrets.DEBUG_KEYSTORE }}" ]; then
+            echo "${{ secrets.DEBUG_KEYSTORE }}" | base64 -d > ./app/persistent-debug.keystore
+          fi
 
       # Lint is intentionally not run in CI: it never gated a merge and added
       # several minutes to every build. Run :app:lintGmsRelease locally.
@@ -150,7 +142,7 @@ jobs:
           LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
 
       - name: Upload Debug APK
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.variant == 'gms' && 'app-debug-gms' || 'app-debug' }}
           path: app/build/outputs/apk/${{ matrix.variant }}/debug/*.apk
@@ -164,7 +156,7 @@ jobs:
 
     steps:
       - name: Download Signed APK
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: app-with-Google-Cast
           path: nightly
