@@ -29,10 +29,34 @@ private val PAXSENIX_BG_LINE_REGEX = "^\\[bg:\\s*(.*)\\]$".toRegex()
 private val AGENT_REGEX = "\\{agent:([^}]+)\\}".toRegex()
 private val BACKGROUND_REGEX = "^\\{bg\\}".toRegex()
 
+private val TITLE_CLEANUP_PATTERNS = listOf(
+    Regex("""\s*\(.*?(official|music\s*video|video|audio|lyrics|lyric|visualizer|hd|hq|4k|remaster|remix|live|acoustic|version|edit|extended|radio|clean|explicit|mv).*?\)""", RegexOption.IGNORE_CASE),
+    Regex("""\s*\[.*?(official|music\s*video|video|audio|lyrics|lyric|visualizer|hd|hq|4k|remaster|remix|live|acoustic|version|edit|extended|radio|clean|explicit|mv).*?\]""", RegexOption.IGNORE_CASE),
+    Regex("""\s*【.*?】"""),
+    Regex("""\s*\|.*$"""),
+    Regex("""\s*//.*$"""),
+    Regex("""\s*-\s*(official|music\s*video|video|audio|lyrics|lyric|visualizer|mv).*$""", RegexOption.IGNORE_CASE),
+    Regex("""\s*\(feat\..*?\)""", RegexOption.IGNORE_CASE),
+    Regex("""\s*\(ft\..*?\)""", RegexOption.IGNORE_CASE),
+    Regex("""\s*feat\..*$""", RegexOption.IGNORE_CASE),
+    Regex("""\s*ft\..*$""", RegexOption.IGNORE_CASE),
+)
+
 @Suppress("RegExpRedundantEscape")
 object LyricsUtils {
-    fun cleanTitleForSearch(title: String): String {
-        return title.replace(Regex("\\s*[(\\[].*?[)\\]]"), "").trim()
+    fun cleanTitleForSearch(title: String, artist: String? = null): String {
+        var cleaned = title.trim()
+
+        if (!artist.isNullOrBlank() && cleaned.startsWith("$artist - ", ignoreCase = true)) {
+            cleaned = cleaned.substring(artist.length + 3).trim()
+        }
+
+        for (pattern in TITLE_CLEANUP_PATTERNS) {
+            cleaned = cleaned.replace(pattern, "")
+        }
+
+        cleaned = cleaned.replace(Regex("\\s*[(\\[].*?[)\\]]"), "").trim()
+        return cleaned.ifBlank { title.trim() }
     }
 
     fun filterLyricsCreditLines(lyrics: String): String {
